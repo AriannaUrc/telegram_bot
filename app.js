@@ -1,42 +1,41 @@
 const TelegramBot = require('node-telegram-bot-api');
+const { Builder, By, Key, until } = require('selenium-webdriver');
+const firefox = require('selenium-webdriver/firefox');
 
-// Replace with your bot's token
+//bot token
 const token = '7183226933:AAF_6O9YxpFV9BXBSfM_HSWrAq-HQhmuoPQ';
 
-// Create a bot that uses 'polling' to fetch new updates
+//creo il bot
 const bot = new TelegramBot(token, { polling: true });
+
 const RssFeeds = new Map()
 const RssBuffer = new Map()
 
 let awaitingInputRss = {};
 let awaitingInputObj = {};
 
-// Handler for /rss command
+// is called when someone uses /rss command
 bot.onText(/\/rss/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-
-    // Send a message asking for input
     bot.sendMessage(chatId, 'Please send me your RSS feed URL.');
 
-    // Set awaiting input status for this user
+    //aspetta per una risposta
     awaitingInputRss[userId] = true;
 });
 
 
-// Handler for /rss command
-bot.onText(/\/getObject/, (msg) => {
+//  is called when someone uses /getObject command
+bot.onText(/\/get_object/, (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
+    bot.sendMessage(chatId, 'Please send me the URL and Xpath of the object (format: "URL Xpath"). If the object is too large parts might be cut off at the end');
 
-    // Send a message asking for input
-    bot.sendMessage(chatId, 'Please send me the URL and Xpath of the object (format: "URL Xpath")');
-
-    // Set awaiting input status for this user
-    awaitingInputRss[userId] = true;
+    //aspetta per una risposta
+    awaitingInputObj[userId] = true;
 });
 
-// General message handler
+//ogni messaggio ricevuto
 bot.on('message', async (msg) => {
     //ogni volta che hai un messaggio aggiorna la lista di utenti
     //getusers();
@@ -44,12 +43,12 @@ bot.on('message', async (msg) => {
     const userId = msg.from.id;
     const text = msg.text;
 
-    // Ignore messages that are commands
+    //ignora se é un comando
     if (text.startsWith('/')) {
         return;
     }
 
-    // Check if we are awaiting input from this user
+    //se stiamo aspettando risposte
     if (awaitingInputRss[userId]) {
             
         if (RssFeeds.has(text)) 
@@ -63,6 +62,7 @@ bot.on('message', async (msg) => {
             if (!userList.includes(userId)) {
                 userList.push(userId);
                 RssFeeds.set(text, userList);
+                bot.sendMessage(chatId, 'RSS feed added/updated successfully.');
             }
             else{
                 sendMessage(chatId, "You were already subscribed to this feed :)")
@@ -84,7 +84,7 @@ bot.on('message', async (msg) => {
             
         }
 
-        bot.sendMessage(chatId, 'RSS feed added/updated successfully.');
+        
         console.log(RssFeeds)
         //users[chatId].feed.add(msg.text, msg.text)
         // Reset awaiting input status
@@ -92,7 +92,23 @@ bot.on('message', async (msg) => {
     }
     else if(awaitingInputObj[userId])
     {
-        awaitingInputObj[userId] = false;
+        // try{
+            //parse of user data
+            let userInput = text.split(" ")
+            let wantedObject = await getElementByXPath(userInput[0], userInput[1]);
+            if(wantedObject != null){
+                console.log(wantedObject)
+                rusticMessage(userId, wantedObject);
+            }
+            else{
+                sendMessage(userId, "we couldnt get your object :(")
+            }
+            awaitingInputObj[userId] = false;
+        //}
+        /* catch{
+            sendMessage(userId, "the url and the xpath given werent in the right format")
+        } */
+
     }
         
 
@@ -166,7 +182,7 @@ async function sendMessage(id, messageTOSend) {
     }
 }
 
-// Function to compare and update RSS feed data
+//controlla se ci sono nuove informazioni e se si le manda a tutti gli interessati
 async function checkAndUpdateFeeds() {
     for (let [rssUrl, userList] of RssFeeds) {
         const newFormattedMessage = await fetchAndFormatRssFeed(rssUrl);
@@ -186,3 +202,50 @@ async function checkAndUpdateFeeds() {
 setInterval(checkAndUpdateFeeds, 60 * 60 * 1000);
 
 
+
+
+async function getElementByXPath(url, xpath) {
+    // Set up Firefox options
+    const firefoxOptions = new firefox.Options();
+
+    // Set up WebDriver with Firefox
+    const driver = await new Builder()
+        .forBrowser('firefox')
+        .setFirefoxOptions(firefoxOptions)
+        .build();
+
+    try {
+        // Navigate to the URL
+        await driver.get(url);
+
+        // Wait for the element to be located
+        const element = await driver.wait(until.elementLocated(By.xpath(xpath)), 10000);
+
+        // Wait for the element to be visible
+        await driver.wait(until.elementIsVisible(element), 10000);
+
+        // Get the inner HTML of the element
+        const htmlContent = await element.getAttribute('innerHTML');
+
+        // Return the HTML content
+        return htmlContent;
+    } catch (error) {
+        console.error('Error:', error);
+        return null;
+    } finally {
+        // Close the WebDriver
+        await driver.quit();
+    }
+}
+
+const requestOptions = {
+    method: "GET",
+    redirect: "follow"
+  };
+
+ function rusticMessage(id, message){
+    fetch("https://api.telegram.org/bot7183226933:AAF_6O9YxpFV9BXBSfM_HSWrAq-HQhmuoPQ/sendMessage?chat_id=" + id + "&text="+message, requestOptions)
+    .then((response) => response.text())
+    .then((result) => console.log(result))
+    .catch((error) => console.error(error));
+ }
