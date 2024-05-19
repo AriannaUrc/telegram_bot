@@ -6,8 +6,10 @@ const token = '7183226933:AAF_6O9YxpFV9BXBSfM_HSWrAq-HQhmuoPQ';
 // Create a bot that uses 'polling' to fetch new updates
 const bot = new TelegramBot(token, { polling: true });
 const RssFeeds = new Map()
+const RssBuffer = new Map()
 
-let awaitingInput = {};
+let awaitingInputRss = {};
+let awaitingInputObj = {};
 
 // Handler for /rss command
 bot.onText(/\/rss/, (msg) => {
@@ -18,7 +20,20 @@ bot.onText(/\/rss/, (msg) => {
     bot.sendMessage(chatId, 'Please send me your RSS feed URL.');
 
     // Set awaiting input status for this user
-    awaitingInput[userId] = true;
+    awaitingInputRss[userId] = true;
+});
+
+
+// Handler for /rss command
+bot.onText(/\/getObject/, (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+
+    // Send a message asking for input
+    bot.sendMessage(chatId, 'Please send me the URL and Xpath of the object (format: "URL Xpath")');
+
+    // Set awaiting input status for this user
+    awaitingInputRss[userId] = true;
 });
 
 // General message handler
@@ -35,68 +50,56 @@ bot.on('message', async (msg) => {
     }
 
     // Check if we are awaiting input from this user
-    if (awaitingInput[userId]) {
-        // Reply with the user's input + "hello!"
-        let sendTest = await fetchAndFormatRssFeed(text);
-        
-        if(sendTest == null){
-            sendMessage(chatId, "impossible to subscribe to this feed");
-        }
-        else{
-            sendMessage(chatId, sendTest);
-            if (RssFeeds.has(text)) {
-                let userList = RssFeeds.get(text);
-                if (!userList.includes(userId)) {
-                    userList.push(userId);
-                    RssFeeds.set(text, userList);
-                }
-            } else {
-                RssFeeds.set(text, [userId]);
+    if (awaitingInputRss[userId]) {
+            
+        if (RssFeeds.has(text)) 
+        {
+            //already have the feed stored
+            //send out the buffer text
+            sendMessage(chatId, RssBuffer[text]);
+
+            //add the user to the list if they werent already subscribed
+            let userList = RssFeeds.get(text);
+            if (!userList.includes(userId)) {
+                userList.push(userId);
+                RssFeeds.set(text, userList);
             }
-    
-            bot.sendMessage(chatId, 'RSS feed added/updated successfully.');
-            console.log(RssFeeds)
-            //users[chatId].feed.add(msg.text, msg.text)
+            else{
+                sendMessage(chatId, "You were already subscribed to this feed :)")
+            }
+        } else 
+        {
+            //new rss feed!
+            let sendTest = await fetchAndFormatRssFeed(text);
+            if(sendTest == null){
+                //something went wrong :(
+                sendMessage(chatId, "impossible to subscribe to this feed");
+            }
+            else{
+                //add all the data
+                sendMessage(chatId, sendTest);
+                RssFeeds.set(text, [userId]);
+                RssBuffer.set(text, sendTest);
+            }
+            
         }
+
+        bot.sendMessage(chatId, 'RSS feed added/updated successfully.');
+        console.log(RssFeeds)
+        //users[chatId].feed.add(msg.text, msg.text)
+        // Reset awaiting input status
+        awaitingInputRss[userId] = false;
+    }
+    else if(awaitingInputObj[userId])
+    {
+        awaitingInputObj[userId] = false;
+    }
         
 
-        // Reset awaiting input status
-        awaitingInput[userId] = false;
-    }
+        
+    
 });
 
-const requestOptions = {
-    method: "GET",
-    redirect: "follow"
-  };
-  
-  
-  //classe per descrivere un utente di telegram
-class TelegramUser {
-    constructor(id, name, username) {
-    this.id = id;
-    this.name = name;
-    this.username = username
-    }
-}
-
-class Feed{
-    constructor(url, users) {
-        this.url = url;
-        this.users = users;
-        }
-}
-  
-//converte una mappa in un oggetto
-function mapToObj(map){
-    var obj = {}
-    map.forEach(function(v, k){
-    obj[k] = v
-    })
-    return obj
-}
-  
- 
   
  // Fetch and format the RSS feed in html style
 async function fetchAndFormatRssFeed(rssUrl) {
@@ -130,14 +133,7 @@ async function fetchAndFormatRssFeed(rssUrl) {
     }
 }
 
-  
-/*function escapeHtml(text) {
-    return text.replace(/&/g, '&amp;')
-               .replace(/</g, '&lt;')
-               .replace(/>/g, '&gt;')
-               .replace(/"/g, '&quot;')
-               .replace(/'/g, '&#039;');
-}*/
+
 
 // manda messaggio
 async function sendMessage(id, messageTOSend) {
@@ -170,61 +166,23 @@ async function sendMessage(id, messageTOSend) {
     }
 }
 
+// Function to compare and update RSS feed data
+async function checkAndUpdateFeeds() {
+    for (let [rssUrl, userList] of RssFeeds) {
+        const newFormattedMessage = await fetchAndFormatRssFeed(rssUrl);
+        const previousFormattedMessage = RssBuffer.get(rssUrl);
 
-  
-const users = new Map();
-  
-  /*
-  function getusers()
-  {
-      fetch("https://api.telegram.org/bot7183226933:AAF_6O9YxpFV9BXBSfM_HSWrAq-HQhmuoPQ/getUpdates?chat_id&offset=30", requestOptions)
-    .then((response) => response.text())
-    .then((result) => {
-      var jsonData = JSON.parse(result);
-  
-      
-  
-      for(let i = 0; i<jsonData.result.length; i++)
-      {
-          console.log(jsonData.result[i].message.from.first_name)
-          
-          var id = jsonData.result[i].message.from.id;
-          var name = jsonData.result[i].message.from.first_name;
-          var username = jsonData.result[i].message.from.username;
-          const user = new TelegramUser(id, name, username);
-          users.set(jsonData.result[i].message.from.id, user);
-      }
-  
-      //var jsonText = JSON.stringify(result);
-      //annota tutti i messaggi su messages.json
-      var fs = require('fs');
-      fs.writeFile("messages.json", result, function(err) {
-          if (err) {
-              console.log(err);
-          }
-      });
-  
-      //annota tutti gli utenti in users.json
-      var UsersText = JSON.stringify(mapToObj(users));
-      var fs = require('fs');
-      fs.writeFile("users.json", UsersText, function(err) {
-          if (err) {
-              console.log(err);
-          }
-      });
-  
-      console.log(result)
-  })
-    .catch((error) => console.error(error));
-  
-  }*/
+        if (newFormattedMessage !== previousFormattedMessage) {
+            RssBuffer.set(rssUrl, newFormattedMessage);
+
+            userList.forEach(userId => {
+                sendMessage(userId, newFormattedMessage);
+            });
+        }
+    }
+}
+
+// Ogni ora controlla e fai il refresh dei buffer
+setInterval(checkAndUpdateFeeds, 60 * 60 * 1000);
 
 
-
-
- /*function sendMessage(id, message){
-    fetch("https://api.telegram.org/bot7183226933:AAF_6O9YxpFV9BXBSfM_HSWrAq-HQhmuoPQ/sendMessage?chat_id=" + id + "&text="+message+"&parse_mode=HTML", requestOptions)
-    .then((response) => response.text())
-    .then((result) => console.log(result))
-    .catch((error) => console.error(error));
- }*/
