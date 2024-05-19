@@ -1,2 +1,0 @@
-{"ok":true,"result":[{"update_id":68902974,
-"message":{"message_id":145,"from":{"id":6588348656,"is_bot":false,"first_name":"Ari","username":"Ari1_0_2","language_code":"en"},"chat":{"id":6588348656,"first_name":"Ari","username":"Ari1_0_2","type":"private"},"date":1716130284,"text":"http://www.acouplecooks.com/feed","entities":[{"offset":0,"length":32,"type":"url"}],"link_preview_options":{"url":"http://www.acouplecooks.com/fee","prefer_small_media":true}}}]}
